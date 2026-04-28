@@ -10,5 +10,5 @@ export default function IndexScreen() {
     return <FullScreenLoader label="Ouverture de SLAquent..." />;
   }
 
-  return <Redirect href={user ? '/conversations' : '/login'} />;
+  return <Redirect href={user ? '/feed' : '/login'} />;
 }

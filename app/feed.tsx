@@ -7,86 +7,70 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 
-import { listUsers } from '@/api/auth';
-import { createOrGetRoom, listRooms } from '@/api/chat';
+import { listFeed } from '@/api/feed';
 import { Avatar } from '@/components/chat/avatar';
-import { ConversationListItem } from '@/components/chat/conversation-list-item';
 import { ThemedText } from '@/components/themed-text';
 import { FullScreenLoader } from '@/components/ui/full-screen-loader';
 import { NoticeBanner } from '@/components/ui/notice-banner';
 import { useAuth } from '@/context/auth-context';
 import { useSocket } from '@/context/socket-context';
 import { useAppColors } from '@/hooks/use-app-colors';
-import { buildContactConversations } from '@/lib/chat';
+import { formatFeedTimestamp } from '@/lib/date';
 import { getErrorMessageFromUnknown } from '@/lib/errors';
-import { ContactConversation } from '@/types/chat';
+import { Message } from '@/types/chat';
 
-export default function ConversationsScreen() {
+export default function FeedScreen() {
   const colors = useAppColors();
   const router = useRouter();
   const isFocused = useIsFocused();
   const { isHydrated, logout, user } = useAuth();
   const { connectionError, isConnected } = useSocket();
-  const [conversations, setConversations] = useState<ContactConversation[]>([]);
-  const [search, setSearch] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logoutLoading, setLogoutLoading] = useState(false);
-  const [openingContactId, setOpeningContactId] = useState<number | null>(null);
 
-  const loadConversations = useCallback(
-    async (isRefreshing = false) => {
-      if (!user) {
-        return;
-      }
+  const loadFeed = useCallback(async (isRefreshing = false) => {
+    if (isRefreshing) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
-      if (isRefreshing) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+    setError(null);
 
-      setError(null);
-
-      try {
-        const [users, rooms] = await Promise.all([listUsers(), listRooms(user.id)]);
-        setConversations(buildContactConversations(users, rooms, user.id));
-      } catch (loadError) {
-        setError(getErrorMessageFromUnknown(loadError, 'Impossible de charger les conversations.'));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [user]
-  );
+    try {
+      const feedMessages = await listFeed();
+      setMessages(feedMessages ?? []);
+    } catch (loadError) {
+      setError(getErrorMessageFromUnknown(loadError, 'Impossible de charger le feed.'));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user || !isFocused) {
       return;
     }
 
-    void loadConversations();
-  }, [isFocused, loadConversations, user]);
+    void loadFeed();
+  }, [isFocused, loadFeed, user]);
 
   if (!isHydrated) {
-    return <FullScreenLoader label="Chargement des conversations..." />;
+    return <FullScreenLoader label="Chargement du feed..." />;
   }
 
   if (!user) {
     return <Redirect href="/login" />;
   }
-
-  const filteredConversations = conversations.filter(({ contact }) =>
-    contact.username.toLowerCase().includes(search.trim().toLowerCase())
-  );
 
   const handleLogout = async () => {
     setLogoutLoading(true);
@@ -99,31 +83,6 @@ export default function ConversationsScreen() {
     }
   };
 
-  const handleOpenConversation = async (conversation: ContactConversation) => {
-    if (!user) {
-      return;
-    }
-
-    setOpeningContactId(conversation.contact.id);
-    setError(null);
-
-    try {
-      const room = await createOrGetRoom(user.id, conversation.contact.id);
-      router.push({
-        pathname: '/chat/[roomId]',
-        params: {
-          contactId: String(conversation.contact.id),
-          contactName: conversation.contact.username,
-          roomId: String(room.id),
-        },
-      });
-    } catch (openError) {
-      setError(getErrorMessageFromUnknown(openError, 'Impossible d’ouvrir cette conversation.'));
-    } finally {
-      setOpeningContactId(null);
-    }
-  };
-
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
@@ -132,7 +91,7 @@ export default function ConversationsScreen() {
             <Avatar accent label={user.username} size={52} />
             <View style={styles.headerCopy}>
               <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
-                Messages
+                Feed
               </ThemedText>
               <ThemedText style={[styles.subtitle, { color: colors.muted }]}>
                 Connecté en tant que @{user.username}
@@ -159,56 +118,56 @@ export default function ConversationsScreen() {
           </Pressable>
         </View>
 
-        <View
-          style={[
-            styles.switcher,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}>
-          <Pressable
-            onPress={() => {
-              router.replace('/feed');
-            }}
-            style={({ pressed }) => [
-              styles.switchButton,
-              { backgroundColor: pressed ? colors.accentSoft : 'transparent' },
-            ]}>
-            <MaterialIcons name="article" size={17} color={colors.muted} />
-            <ThemedText style={[styles.switchButtonLabel, { color: colors.muted }]}>
-              Feed
-            </ThemedText>
-          </Pressable>
-
+        <View style={[styles.switcher, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Pressable
             style={({ pressed }) => [
               styles.switchButton,
               styles.switchButtonActive,
               { backgroundColor: colors.accent, opacity: pressed ? 0.88 : 1 },
             ]}>
-            <MaterialIcons name="forum" size={17} color="#ffffff" />
-            <ThemedText style={styles.switchButtonActiveLabel}>Messages</ThemedText>
+            <MaterialIcons name="article" size={17} color="#ffffff" />
+            <ThemedText style={styles.switchButtonActiveLabel}>Feed</ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              router.replace('/conversations');
+            }}
+            style={({ pressed }) => [
+              styles.switchButton,
+              { backgroundColor: pressed ? colors.accentSoft : 'transparent' },
+            ]}>
+            <MaterialIcons name="forum" size={17} color={colors.muted} />
+            <ThemedText style={[styles.switchButtonLabel, { color: colors.muted }]}>
+              Messages
+            </ThemedText>
           </Pressable>
         </View>
 
         <View
           style={[
-            styles.searchContainer,
+            styles.hero,
             {
-              backgroundColor: colors.input,
+              backgroundColor: colors.card,
               borderColor: colors.border,
             },
           ]}>
-          <MaterialIcons name="search" size={20} color={colors.muted} />
-          <TextInput
-            onChangeText={setSearch}
-            placeholder="Rechercher un contact"
-            placeholderTextColor={colors.muted}
-            selectionColor={colors.accent}
-            style={[styles.searchInput, { color: colors.text }]}
-            value={search}
-          />
+          <View style={styles.heroCopy}>
+            <ThemedText style={[styles.eyebrow, { color: colors.accentStrong }]}>
+              Vue publique
+            </ThemedText>
+            <ThemedText type="subtitle" style={[styles.heroTitle, { color: colors.text }]}>
+              Feed communautaire
+            </ThemedText>
+            <ThemedText style={[styles.heroSubtitle, { color: colors.muted }]}>
+              Retrouve les messages récents sans quitter l’espace de discussion.
+            </ThemedText>
+          </View>
+
+          <View style={[styles.countCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <ThemedText style={[styles.countValue, { color: colors.text }]}>{messages.length}</ThemedText>
+            <ThemedText style={[styles.countLabel, { color: colors.muted }]}>messages</ThemedText>
+          </View>
         </View>
 
         <View style={styles.statusRow}>
@@ -236,35 +195,60 @@ export default function ConversationsScreen() {
         {error ? <NoticeBanner message={error} tone="error" /> : null}
 
         {loading ? (
-          <FullScreenLoader label="Chargement des contacts..." />
+          <FullScreenLoader label="Chargement des messages publics..." />
         ) : (
           <FlatList
             contentContainerStyle={[
               styles.listContent,
-              filteredConversations.length === 0 && styles.emptyListContent,
+              messages.length === 0 && styles.emptyListContent,
             ]}
-            data={filteredConversations}
-            keyExtractor={(item) => String(item.contact.id)}
+            data={messages}
+            keyExtractor={(item) => String(item.id)}
             refreshControl={
               <RefreshControl
                 onRefresh={() => {
-                  void loadConversations(true);
+                  void loadFeed(true);
                 }}
                 refreshing={refreshing}
                 tintColor={colors.accent}
               />
             }
-            renderItem={({ item }) => (
-              <ConversationListItem
-                busy={openingContactId === item.contact.id}
-                contact={item.contact}
-                lastMessage={item.lastMessage}
-                onPress={() => {
-                  void handleOpenConversation(item);
-                }}
-                updatedAt={item.updatedAt}
-              />
-            )}
+            renderItem={({ item }) => {
+              const isMine = item.senderId === user.id;
+              const username = isMine ? 'Vous' : item.sender?.username || 'Anonyme';
+
+              return (
+                <View
+                  style={[
+                    styles.feedCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}>
+                  <View style={styles.feedCardHeader}>
+                    <View style={styles.author}>
+                      <Avatar accent={isMine} label={username} size={48} />
+                      <View style={styles.authorCopy}>
+                        <ThemedText style={[styles.authorName, { color: colors.text }]}>
+                          {username}
+                        </ThemedText>
+                        <ThemedText style={[styles.authorMeta, { color: colors.muted }]}>
+                          {isMine ? 'Votre publication' : 'Membre de la communauté'}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <ThemedText style={[styles.timestamp, { color: colors.muted }]}>
+                      {formatFeedTimestamp(item.createdAt)}
+                    </ThemedText>
+                  </View>
+
+                  <ThemedText style={[styles.feedContent, { color: colors.text }]}>
+                    {item.content}
+                  </ThemedText>
+                </View>
+              );
+            }}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
               <View
@@ -275,12 +259,12 @@ export default function ConversationsScreen() {
                     borderColor: colors.border,
                   },
                 ]}>
-                <MaterialIcons name="forum" size={28} color={colors.accent} />
+                <MaterialIcons name="article" size={28} color={colors.accent} />
                 <ThemedText type="subtitle" style={[styles.emptyTitle, { color: colors.text }]}>
-                  Aucun contact trouvé
+                  Aucun message public
                 </ThemedText>
                 <ThemedText style={[styles.emptyCopy, { color: colors.muted }]}>
-                  Essaie un autre nom ou ajoute un utilisateur côté backend.
+                  Le feed apparaîtra ici dès qu’un utilisateur publiera un message.
                 </ThemedText>
               </View>
             }
@@ -332,16 +316,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 44,
   },
-  searchContainer: {
-    alignItems: 'center',
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
   switcher: {
     borderRadius: 18,
     borderWidth: 1,
@@ -376,10 +350,50 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 18,
   },
-  searchInput: {
+  hero: {
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 16,
+    justifyContent: 'space-between',
+    marginTop: 18,
+    padding: 20,
+  },
+  heroCopy: {
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 0,
+    gap: 8,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+    lineHeight: 16,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    fontSize: 22,
+    lineHeight: 26,
+  },
+  heroSubtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  countCard: {
+    alignItems: 'flex-end',
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'space-between',
+    minWidth: 92,
+    padding: 14,
+  },
+  countValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 36,
+  },
+  countLabel: {
+    fontSize: 13,
+    lineHeight: 16,
   },
   statusRow: {
     flexDirection: 'row',
@@ -404,7 +418,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   listContent: {
-    gap: 12,
+    gap: 14,
     paddingBottom: 32,
     paddingTop: 18,
   },
@@ -412,13 +426,57 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
+  feedCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  feedCardHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 14,
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  author: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minWidth: 0,
+  },
+  authorCopy: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0,
+  },
+  authorName: {
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  authorMeta: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  timestamp: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  feedContent: {
+    fontSize: 16,
+    lineHeight: 25,
+  },
   emptyState: {
     alignItems: 'center',
-    borderRadius: 24,
+    borderRadius: 22,
+    borderStyle: 'dashed',
     borderWidth: 1,
-    gap: 12,
-    paddingHorizontal: 22,
-    paddingVertical: 28,
+    gap: 10,
+    marginHorizontal: 6,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
   },
   emptyTitle: {
     textAlign: 'center',

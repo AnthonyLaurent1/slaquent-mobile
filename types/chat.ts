@@ -8,9 +8,10 @@ export type Message = {
   createdAt: string;
   deliveredAt: string | null;
   id: number;
+  isPublic?: boolean;
   isRead?: boolean;
   readAt: string | null;
-  recipient: User;
+  recipient?: User;
   recipientId: number;
   roomId: number;
   sender: User;

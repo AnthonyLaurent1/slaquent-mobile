@@ -41,3 +41,24 @@ export function formatConversationTimestamp(isoDate: string | null | undefined) 
     month: '2-digit',
   });
 }
+
+export function formatFeedTimestamp(isoDate: string | null | undefined) {
+  if (!isoDate) {
+    return '';
+  }
+
+  const date = new Date(isoDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const now = new Date();
+  const isSameDay = date.toDateString() === now.toDateString();
+
+  return new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(isSameDay ? {} : { day: '2-digit', month: 'short' }),
+  }).format(date);
+}

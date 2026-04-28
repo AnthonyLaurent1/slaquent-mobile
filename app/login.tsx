@@ -31,7 +31,7 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (user) {
-      router.replace('/conversations');
+      router.replace('/feed');
     }
   }, [router, user]);
 
@@ -62,7 +62,7 @@ export default function LoginScreen() {
     try {
       const registeredUser = await registerUser(nextUsername);
       await login(registeredUser);
-      router.replace('/conversations');
+      router.replace('/feed');
     } catch (submitError) {
       setError(getErrorMessageFromUnknown(submitError, 'Connexion impossible.'));
     } finally {
